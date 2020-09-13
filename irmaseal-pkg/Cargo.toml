@@ -12,6 +12,7 @@ irma = "0.0.1"
 
 actix-rt = "0.2.2"
 actix-web = { version = "1.0.7", default-features = false }
+actix-cors = "0.1.0"
 arrayref = "0.3.5"
 subtle = "2.1.1"
 clap = { version = "2.33.0", features = ["yaml"] }

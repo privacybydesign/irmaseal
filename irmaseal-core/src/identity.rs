@@ -53,7 +53,7 @@ impl Identity {
     pub fn derive(&self) -> Result<ibe::kiltz_vahlis_one::Identity, Error> {
         let mut buf = IdentityBuf::new();
 
-        buf.write(&self.timestamp.to_be_bytes())?;
+        buf.write(&self.timestamp.to_be_bytes())?; // TODO: Remove all extend usage because of iter is in std.
 
         buf.write(self.attribute.atype.as_bytes())?;
 

@@ -1,5 +1,6 @@
 use crate::*;
 use arrayvec::{Array, ArrayVec};
+use std::vec::Vec;
 
 pub struct SliceReader<'a, T> {
     buf: &'a [T],
@@ -13,9 +14,9 @@ impl<'a, T> SliceReader<'a, T> {
 }
 
 impl<'a> Readable for SliceReader<'a, u8> {
-    fn read_byte(&mut self) -> Result<u8, Error> {
+    fn read_byte(&mut self) -> Result<u8, LegacyError> {
         if self.buf.len() < self.i {
-            return Err(Error::EndOfStream);
+            return Err(LegacyError::EndOfStream);
         }
 
         unsafe {
@@ -26,9 +27,9 @@ impl<'a> Readable for SliceReader<'a, u8> {
         }
     }
 
-    fn read_bytes(&mut self, n: usize) -> Result<&[u8], Error> {
+    fn read_bytes(&mut self, n: usize) -> Result<&[u8], LegacyError> {
         if self.i >= self.buf.len() {
-            return Err(Error::EndOfStream);
+            return Err(LegacyError::EndOfStream);
         }
 
         let mut end = self.i + n; // Non-inclusive
@@ -44,12 +45,12 @@ impl<'a> Readable for SliceReader<'a, u8> {
 }
 
 impl<A: Array<Item = u8>> Writable for ArrayVec<A> {
-    fn write(&mut self, data: &[u8]) -> Result<(), Error> {
+    fn write(&mut self, data: &[u8]) -> Result<(), LegacyError> {
         unsafe {
             let len = self.len();
 
             if len + data.len() > A::capacity() {
-                return Err(Error::UpstreamWritableError);
+                return Err(LegacyError::UpstreamWritableError);
             }
 
             let tail = core::slice::from_raw_parts_mut(self.get_unchecked_mut(len), data.len());

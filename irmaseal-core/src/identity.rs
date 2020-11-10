@@ -1,4 +1,4 @@
-use super::{Error, Writable};
+use super::Error;
 use arrayvec::{ArrayString, ArrayVec};
 use serde::{Deserialize, Serialize};
 
@@ -53,12 +53,12 @@ impl Identity {
     pub fn derive(&self) -> Result<ibe::kiltz_vahlis_one::Identity, Error> {
         let mut buf = IdentityBuf::new();
 
-        buf.write(&self.timestamp.to_be_bytes())?;
+        buf.extend(&self.timestamp.to_be_bytes())?;
 
-        buf.write(self.attribute.atype.as_bytes())?;
+        buf.extend(self.attribute.atype.as_bytes())?;
 
         match self.attribute.value {
-            None => buf.write(&[IDENTITY_UNSET]),
+            None => buf.extend(&[IDENTITY_UNSET]),
             Some(i) => {
                 let i = i.as_bytes();
 
@@ -66,7 +66,7 @@ impl Identity {
                     return Err(Error::ConstraintViolation);
                 }
 
-                buf.write(i)
+                buf.extend(i)
             }
         }?;
 

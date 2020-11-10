@@ -1,11 +1,43 @@
 use crate::stream::*;
-use crate::util::SliceReader;
 use crate::*;
 
 use arrayvec::ArrayVec;
+use futures::io::{Error, ErrorKind};
+use futures::task::{Context, Poll};
 use rand::RngCore;
+use std::pin::Pin;
 
 type BigBuf = ArrayVec<[u8; 65536]>;
+
+struct BifBufWriter {
+    big_buf: BigBuf,
+}
+
+impl AsyncWrite for BifBufWriter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, Error>> {
+        let this = &mut *self;
+        if this.big_buf.capacity() - this.big_buf.len() < buf.len() {
+            Poll::Ready(Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "size exceeded max BigBuf length",
+            )))
+        }
+        this.big_buf.extend(buf);
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        Poll::Ready(Ok(()))
+    }
+}
 
 struct DefaultProps {
     pub i: Identity,
@@ -29,37 +61,38 @@ impl Default for DefaultProps {
     }
 }
 
-fn seal(props: &DefaultProps, content: &[u8]) -> BigBuf {
+fn seal<'a>(props: &DefaultProps, content: &[u8]) -> BigBuf {
     let mut rng = rand::thread_rng();
     let DefaultProps { i, pk, sk: _ } = props;
 
-    let mut buf = BigBuf::new();
-    {
-        let mut s = Sealer::new(i.clone(), &PublicKey(pk.clone()), &mut rng, &mut buf).unwrap();
-        s.write(&content).unwrap();
-    } // Force Drop of s.
+    let mut buf_writer = BifBufWriter {
+        big_buf: BigBuf::new(),
+    };
 
-    buf
+    let mut s = Sealer::new(&i, &PublicKey(pk.clone()), &mut rng, &mut buf_writer)
+        .await
+        .unwrap();
+    s.seal(content).unwrap();
+
+    buf_writer.big_buf
 }
 
 fn unseal(props: &DefaultProps, buf: &[u8]) -> (BigBuf, bool) {
     let mut rng = rand::thread_rng();
     let DefaultProps { i, pk, sk } = props;
 
-    let bufr = SliceReader::new(&buf);
-    let (m, o) = OpenerSealed::new(bufr).unwrap();
+    let (m, o) = OpenerSealed::new(buf).unwrap();
     let i2 = &m.identity;
 
     assert_eq!(&i, &i2);
 
-    let usk = ibe::kiltz_vahlis_one::extract_usk(&pk, &sk, &i2.derive().unwrap(), &mut rng);
+    let usk = ibe::kiltz_vahlis_one::extract_usk(&pk, &sk, &i2.derive(), &mut rng);
+    let mut dst = BifBufWriter {
+        big_buf: BigBuf::new(),
+    };
+    let validated = o.unseal(&UserSecretKey(usk), &mut dst).unwrap();
 
-    let mut o2 = o.unseal(&m, &UserSecretKey(usk)).unwrap();
-
-    let mut dst = BigBuf::new();
-    o2.write_to(&mut dst).unwrap();
-
-    (dst, o2.validate())
+    (dst.big_buf, validated)
 }
 
 fn seal_and_unseal(props: &DefaultProps, content: &[u8]) -> (BigBuf, bool) {
